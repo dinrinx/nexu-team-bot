@@ -2,8 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from aiogram.fsm.storage.base import StorageKey
+
 from bot.constants import STATUS_HAS_TEAM, STATUS_LOOKING
 from bot.database import Database, Profile, now_iso
+from bot.storage import SQLiteStorage
 
 
 class DatabaseTests(unittest.TestCase):
@@ -90,6 +93,34 @@ class DatabaseTests(unittest.TestCase):
 
         self.assertIsNone(self.db.get_profile(2))
         self.assertEqual(self.db.get_matches_for_user(1), [])
+
+    def test_reaction_requires_existing_profiles(self) -> None:
+        self.db.upsert_profile(self.make_profile(1))
+        self.assertFalse(self.db.save_reaction(1, 999, "like"))
+        self.assertFalse(self.db.create_match(1, 999))
+        self.assertFalse(self.db.save_reaction(1, 1, "like"))
+
+
+class SQLiteStorageTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "storage.sqlite3"
+        self.storage = SQLiteStorage(self.db_path)
+        self.key = StorageKey(bot_id=1, chat_id=10, user_id=20)
+
+    async def asyncTearDown(self) -> None:
+        await self.storage.close()
+        self.temp_dir.cleanup()
+
+    async def test_state_and_data_persist_between_instances(self) -> None:
+        await self.storage.set_state(self.key, "ProfileForm:name")
+        await self.storage.set_data(self.key, {"draft": {"name": "Diana"}})
+        await self.storage.close()
+
+        reopened = SQLiteStorage(self.db_path)
+        self.addAsyncCleanup(reopened.close)
+        self.assertEqual(await reopened.get_state(self.key), "ProfileForm:name")
+        self.assertEqual(await reopened.get_data(self.key), {"draft": {"name": "Diana"}})
 
 
 if __name__ == "__main__":

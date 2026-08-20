@@ -93,8 +93,8 @@ class Database:
 
             CREATE TABLE IF NOT EXISTS likes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                from_user_id INTEGER NOT NULL,
-                to_user_id INTEGER NOT NULL,
+                from_user_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                to_user_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                 reaction TEXT NOT NULL CHECK(reaction IN ('like', 'pass')),
                 created_at TEXT NOT NULL,
                 UNIQUE(from_user_id, to_user_id)
@@ -102,8 +102,8 @@ class Database:
 
             CREATE TABLE IF NOT EXISTS matches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_low_id INTEGER NOT NULL,
-                user_high_id INTEGER NOT NULL,
+                user_low_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                user_high_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                 created_at TEXT NOT NULL,
                 UNIQUE(user_low_id, user_high_id)
             );
@@ -112,7 +112,73 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_matches_users ON matches (user_low_id, user_high_id);
             """
         )
+        self._migrate_relational_tables()
         self.connection.commit()
+
+    def _table_has_foreign_keys(self, table_name: str) -> bool:
+        rows = self.connection.execute(f"PRAGMA foreign_key_list({table_name})").fetchall()
+        return bool(rows)
+
+    def _migrate_relational_tables(self) -> None:
+        if not self._table_has_foreign_keys("likes"):
+            self.connection.executescript(
+                """
+                ALTER TABLE likes RENAME TO likes_old;
+                CREATE TABLE likes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_user_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    to_user_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    reaction TEXT NOT NULL CHECK(reaction IN ('like', 'pass')),
+                    created_at TEXT NOT NULL,
+                    UNIQUE(from_user_id, to_user_id)
+                );
+                INSERT OR IGNORE INTO likes (id, from_user_id, to_user_id, reaction, created_at)
+                SELECT lo.id, lo.from_user_id, lo.to_user_id, lo.reaction, lo.created_at
+                FROM likes_old lo
+                JOIN profiles pf ON pf.id = lo.from_user_id
+                JOIN profiles pt ON pt.id = lo.to_user_id;
+                DROP TABLE likes_old;
+                CREATE INDEX IF NOT EXISTS idx_likes_to_user ON likes (to_user_id, reaction);
+                """
+            )
+
+        if not self._table_has_foreign_keys("matches"):
+            self.connection.executescript(
+                """
+                ALTER TABLE matches RENAME TO matches_old;
+                CREATE TABLE matches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_low_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    user_high_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(user_low_id, user_high_id)
+                );
+                INSERT OR IGNORE INTO matches (id, user_low_id, user_high_id, created_at)
+                SELECT mo.id, mo.user_low_id, mo.user_high_id, mo.created_at
+                FROM matches_old mo
+                JOIN profiles pl ON pl.id = mo.user_low_id
+                JOIN profiles ph ON ph.id = mo.user_high_id;
+                DROP TABLE matches_old;
+                CREATE INDEX IF NOT EXISTS idx_matches_users ON matches (user_low_id, user_high_id);
+                """
+            )
+
+    def profile_exists(self, user_id: int) -> bool:
+        row = self.connection.execute(
+            "SELECT 1 FROM profiles WHERE id = ? LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        return row is not None
+
+    def profiles_exist(self, *user_ids: int) -> bool:
+        if not user_ids:
+            return True
+        placeholders = ", ".join("?" for _ in user_ids)
+        row = self.connection.execute(
+            f"SELECT COUNT(*) AS count FROM profiles WHERE id IN ({placeholders})",
+            user_ids,
+        ).fetchone()
+        return row["count"] == len(set(user_ids))
 
     def upsert_profile(self, profile: Profile) -> None:
         self.connection.execute(
@@ -181,6 +247,8 @@ class Database:
         self.connection.commit()
 
     def save_reaction(self, from_user_id: int, to_user_id: int, reaction: str) -> bool:
+        if from_user_id == to_user_id or not self.profiles_exist(from_user_id, to_user_id):
+            return False
         try:
             self.connection.execute(
                 """
@@ -207,6 +275,8 @@ class Database:
         return row is not None
 
     def create_match(self, first_user_id: int, second_user_id: int) -> bool:
+        if first_user_id == second_user_id or not self.profiles_exist(first_user_id, second_user_id):
+            return False
         low_id, high_id = sorted((first_user_id, second_user_id))
         try:
             self.connection.execute(

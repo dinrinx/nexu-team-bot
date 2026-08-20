@@ -6,10 +6,9 @@ from datetime import datetime
 from typing import Any
 
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, CallbackQuery, Message, User
 
 from bot.config import Settings, load_settings
@@ -47,6 +46,7 @@ from bot.keyboards import (
     status_keyboard,
 )
 from bot.states import BrowseState, ProfileForm
+from bot.storage import SQLiteStorage
 
 
 router = Router()
@@ -448,6 +448,38 @@ async def send_match_notifications(bot: Bot, first_profile: Profile, second_prof
             logging.warning("Could not notify user %s about match", chat_id)
 
 
+async def broadcast_to_user(
+    bot: Bot,
+    chat_id: int,
+    text: str | None,
+    source_chat_id: int | None,
+    source_message_id: int | None,
+    max_attempts: int = 3,
+) -> bool:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if source_chat_id and source_message_id:
+                await bot.copy_message(
+                    chat_id=chat_id,
+                    from_chat_id=source_chat_id,
+                    message_id=source_message_id,
+                )
+            else:
+                await bot.send_message(chat_id, text or "")
+            return True
+        except TelegramRetryAfter as error:
+            if attempt == max_attempts:
+                logging.warning("Broadcast retry limit reached for %s after rate limit", chat_id)
+                return False
+            await asyncio.sleep(error.retry_after)
+        except TelegramForbiddenError:
+            return False
+        except TelegramAPIError as error:
+            logging.warning("Broadcast failed for %s: %s", chat_id, error)
+            return False
+    return False
+
+
 def format_matches(matches: list[tuple[Profile, str]]) -> str:
     if not matches:
         return "Мэтчей пока нет. Возвращайся в ленту и ищи команду."
@@ -788,6 +820,12 @@ async def reaction_handler(callback: CallbackQuery, db: Database, state: FSMCont
         await callback.answer("Свою анкету нельзя оценивать.", show_alert=True)
         return
 
+    if not db.profiles_exist(callback.from_user.id, target_id):
+        await safe_remove_inline_keyboard(callback)
+        await callback.answer("Эта анкета уже недоступна.", show_alert=True)
+        await show_next_profile(callback.message, callback.from_user.id, state, db)
+        return
+
     saved = db.save_reaction(callback.from_user.id, target_id, reaction)
     if not saved:
         await callback.answer("Ты уже реагировал(а) на эту анкету.")
@@ -832,17 +870,16 @@ async def broadcast_handler(message: Message, db: Database, settings: Settings, 
         return
 
     for user_id in db.get_profile_ids():
-        try:
-            if message.reply_to_message:
-                await bot.copy_message(
-                    chat_id=user_id,
-                    from_chat_id=message.chat.id,
-                    message_id=message.reply_to_message.message_id,
-                )
-            else:
-                await bot.send_message(user_id, text)
+        delivered = await broadcast_to_user(
+            bot=bot,
+            chat_id=user_id,
+            text=text,
+            source_chat_id=message.chat.id if message.reply_to_message else None,
+            source_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
+        )
+        if delivered:
             sent += 1
-        except TelegramForbiddenError:
+        else:
             failed += 1
 
     await message.answer(f"Рассылка завершена. Отправлено: {sent}, не доставлено: {failed}.")
@@ -880,12 +917,17 @@ async def main() -> None:
     db.init_schema()
 
     bot = Bot(settings.bot_token)
-    dp = Dispatcher(storage=MemoryStorage())
+    storage = SQLiteStorage(settings.database_path)
+    dp = Dispatcher(storage=storage)
     dp.include_router(router)
 
-    await setup_commands(bot, settings)
-    await dp.start_polling(bot, db=db, settings=settings)
-    db.close()
+    try:
+        await setup_commands(bot, settings)
+        await dp.start_polling(bot, db=db, settings=settings)
+    finally:
+        await storage.close()
+        await bot.session.close()
+        db.close()
 
 
 def run() -> None:
