@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BotCommand, CallbackQuery, Message, User
+from aiogram.types import BotCommand, CallbackQuery, FSInputFile, Message, User
 
 from bot.config import Settings, load_settings
 from bot.constants import (
@@ -511,6 +512,32 @@ def format_stats(stats: dict[str, Any]) -> str:
     )
 
 
+def format_size(num_bytes: int) -> str:
+    value = float(num_bytes)
+    units = ["B", "KB", "MB", "GB"]
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{num_bytes} B"
+
+
+def format_health(snapshot: dict[str, Any]) -> str:
+    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return (
+        "Health check:\n"
+        f"• Проверено: {checked_at}\n"
+        f"• Путь к БД: {snapshot['db_path']}\n"
+        f"• Размер БД: {format_size(snapshot['db_size_bytes'])}\n"
+        f"• Анкет: {snapshot['profiles_count']}\n"
+        f"• Лайков: {snapshot['likes_count']}\n"
+        f"• Мэтчей: {snapshot['matches_count']}\n"
+        f"• Активных FSM-сессий: {snapshot['fsm_sessions']}"
+    )
+
+
 def toggle_option(options: list[str], value: str) -> list[str]:
     updated = list(options)
     if value in updated:
@@ -852,6 +879,14 @@ async def stats_handler(message: Message, db: Database, settings: Settings) -> N
     await message.answer(format_stats(db.get_stats()), reply_markup=main_menu())
 
 
+@router.message(Command("health"))
+async def health_handler(message: Message, db: Database, settings: Settings) -> None:
+    if message.from_user.id != settings.admin_id:
+        await message.answer("Эта команда доступна только администратору.")
+        return
+    await message.answer(format_health(db.get_health_snapshot()), reply_markup=main_menu())
+
+
 @router.message(Command("broadcast_team"))
 async def broadcast_handler(message: Message, db: Database, settings: Settings, bot: Bot) -> None:
     if message.from_user.id != settings.admin_id:
@@ -885,6 +920,27 @@ async def broadcast_handler(message: Message, db: Database, settings: Settings, 
     await message.answer(f"Рассылка завершена. Отправлено: {sent}, не доставлено: {failed}.")
 
 
+@router.message(Command("backup_db"))
+async def backup_db_handler(message: Message, db: Database, settings: Settings) -> None:
+    if message.from_user.id != settings.admin_id:
+        await message.answer("Эта команда доступна только администратору.")
+        return
+
+    backup_dir = Path(settings.database_path).parent / "backups"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    backup_path = backup_dir / f"team_matcher_{timestamp}.sqlite3"
+    db.backup_to(backup_path)
+
+    await message.answer(
+        f"Бэкап базы создан: {backup_path.name} ({format_size(backup_path.stat().st_size)})",
+        reply_markup=main_menu(),
+    )
+    await message.answer_document(
+        document=FSInputFile(backup_path),
+        caption=f"SQLite backup от {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+    )
+
+
 @router.message()
 async def fallback_handler(message: Message) -> None:
     await message.answer(
@@ -904,6 +960,8 @@ async def setup_commands(bot: Bot, settings: Settings) -> None:
         commands.extend(
             [
                 BotCommand(command="stats", description="Статистика"),
+                BotCommand(command="health", description="Состояние бота"),
+                BotCommand(command="backup_db", description="Бэкап базы SQLite"),
                 BotCommand(command="broadcast_team", description="Рассылка участникам"),
             ]
         )

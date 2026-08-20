@@ -8,7 +8,7 @@
 - Хранит профили, лайки и мэтчи в SQLite
 - Показывает ленту анкет без раскрытия контактов до взаимного лайка
 - Поддерживает фильтры по чемпионатам, ролям и ролям, которые ищет команда
-- Даёт команды `/my`, `/matches`, `/stats`, `/broadcast_team`
+- Даёт команды `/my`, `/matches`, `/stats`, `/health`, `/backup_db`, `/broadcast_team`
 - Удаляет связанные лайки и мэтчи при удалении анкеты
 
 ## Структура
@@ -70,6 +70,18 @@ systemctl status nexu-team-bot.service
 
 ```bash
 journalctl -u nexu-team-bot -f
+```
+
+Быстрая админ-проверка из Telegram:
+
+```text
+/health
+```
+
+Резервная копия SQLite из Telegram:
+
+```text
+/backup_db
 ```
 
 Обновление:

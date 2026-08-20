@@ -100,6 +100,16 @@ class DatabaseTests(unittest.TestCase):
         self.assertFalse(self.db.create_match(1, 999))
         self.assertFalse(self.db.save_reaction(1, 1, "like"))
 
+    def test_backup_roundtrip(self) -> None:
+        self.db.upsert_profile(self.make_profile(1))
+        backup_path = Path(self.temp_dir.name) / "backup.sqlite3"
+        self.db.backup_to(backup_path)
+
+        backup_db = Database(backup_path)
+        self.addCleanup(backup_db.close)
+        self.assertTrue(backup_path.exists())
+        self.assertIsNotNone(backup_db.get_profile(1))
+
 
 class SQLiteStorageTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:

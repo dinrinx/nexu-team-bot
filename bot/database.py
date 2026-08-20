@@ -72,6 +72,14 @@ class Database:
     def close(self) -> None:
         self.connection.close()
 
+    def backup_to(self, destination: str | Path) -> Path:
+        destination_path = Path(destination)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(destination_path) as backup_connection:
+            self.connection.backup(backup_connection)
+            backup_connection.commit()
+        return destination_path
+
     def init_schema(self) -> None:
         self.connection.executescript(
             """
@@ -371,4 +379,28 @@ class Database:
             "by_championship": dict(by_championship),
             "likes_count": likes_count,
             "matches_count": matches_count,
+        }
+
+    def get_health_snapshot(self) -> dict[str, Any]:
+        stats = self.get_stats()
+        fsm_sessions = 0
+        table_exists = self.connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'fsm_storage'
+            LIMIT 1
+            """
+        ).fetchone()
+        if table_exists is not None:
+            fsm_sessions = self.connection.execute(
+                "SELECT COUNT(*) AS count FROM fsm_storage"
+            ).fetchone()["count"]
+
+        db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
+        return {
+            **stats,
+            "db_path": str(self.db_path),
+            "db_size_bytes": db_size_bytes,
+            "fsm_sessions": fsm_sessions,
         }
