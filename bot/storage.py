@@ -15,9 +15,9 @@ def _storage_key_to_string(key: StorageKey) -> str:
         "bot_id": key.bot_id,
         "chat_id": key.chat_id,
         "user_id": key.user_id,
-        "thread_id": key.thread_id,
-        "business_connection_id": key.business_connection_id,
-        "destiny": key.destiny,
+        "thread_id": getattr(key, "thread_id", None),
+        "business_connection_id": getattr(key, "business_connection_id", None),
+        "destiny": getattr(key, "destiny", "default"),
     }
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
