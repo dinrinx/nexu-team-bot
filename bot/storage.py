@@ -22,6 +22,22 @@ def _storage_key_to_string(key: StorageKey) -> str:
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
+def _serialize_state(state: StateType = None) -> str | None:
+    if state is None:
+        return None
+    if hasattr(state, "state"):
+        return getattr(state, "state")
+    return str(state)
+
+
+def _normalize_state_value(state: str | None) -> str | None:
+    if state is None:
+        return None
+    if state.startswith("<State '") and state.endswith("'>"):
+        return state[len("<State '") : -2]
+    return state
+
+
 class SQLiteStorage(BaseStorage):
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
@@ -43,7 +59,7 @@ class SQLiteStorage(BaseStorage):
 
     async def set_state(self, key: StorageKey, state: StateType = None) -> None:
         storage_key = _storage_key_to_string(key)
-        state_value = None if state is None else str(state)
+        state_value = _serialize_state(state)
         existing = self.connection.execute(
             "SELECT data FROM fsm_storage WHERE storage_key = ?",
             (storage_key,),
@@ -69,7 +85,7 @@ class SQLiteStorage(BaseStorage):
         ).fetchone()
         if row is None:
             return None
-        return row["state"]
+        return _normalize_state_value(row["state"])
 
     async def set_data(self, key: StorageKey, data: Mapping[str, Any]) -> None:
         storage_key = _storage_key_to_string(key)

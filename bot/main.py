@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -92,7 +93,11 @@ def build_default_draft(user: User, existing: Profile | None = None) -> dict[str
 
 
 def format_tags(values: list[str]) -> str:
-    return ", ".join(values)
+    return ", ".join(html.escape(value) for value in values)
+
+
+def escape_text(value: str) -> str:
+    return html.escape(value)
 
 
 def format_profile_card(profile: Profile | dict[str, Any], reveal_contact: bool = False) -> str:
@@ -111,23 +116,23 @@ def format_profile_card(profile: Profile | dict[str, Any], reveal_contact: bool 
         data = profile
 
     lines = [
-        f"Имя: {data['name']}",
-        f"Чемпионаты: {format_tags(data['championships'])}",
-        f"Сильные стороны: {format_tags(data['roles'])}",
-        f"Статус: {STATUS_LABELS[data['status']]}",
+        f"👤 <b>{escape_text(data['name'])}</b>",
+        f"🏆 <b>Чемпионаты:</b> {format_tags(data['championships'])}",
+        f"🧠 <b>Сильные стороны:</b> {format_tags(data['roles'])}",
+        f"📌 <b>Статус:</b> {escape_text(STATUS_LABELS[data['status']])}",
     ]
 
     if data["status"] == STATUS_HAS_TEAM and data.get("looking_for_roles"):
-        lines.append(f"Кого ищут в команду: {format_tags(data['looking_for_roles'])}")
+        lines.append(f"🤝 <b>Кого ищут в команду:</b> {format_tags(data['looking_for_roles'])}")
 
-    lines.append(f"Город / регион: {data['city']}")
+    lines.append(f"🌍 <b>Город / регион:</b> {escape_text(data['city'])}")
 
     about = data.get("about")
     if about:
-        lines.append(f"О себе: {about}")
+        lines.append(f"✨ <b>О себе:</b> {escape_text(about)}")
 
     if reveal_contact:
-        lines.append(f"Контакт: {data['contact']}")
+        lines.append(f"📬 <b>Контакт:</b> {escape_text(data['contact'])}")
 
     return "\n".join(lines)
 
@@ -141,11 +146,11 @@ def format_filters(filters: dict[str, list[str]]) -> str:
         else "любые"
     )
     return (
-        "Фильтры ленты:\n"
-        f"• Чемпионаты: {championships}\n"
-        f"• Сильные стороны: {roles}\n"
-        f"• Кого ищут: {looking}\n\n"
-        "Настрой фильтры и нажми «Показать анкеты»."
+        "🔎 <b>Фильтры ленты</b>\n"
+        f"• <b>Чемпионаты:</b> {championships}\n"
+        f"• <b>Сильные стороны:</b> {roles}\n"
+        f"• <b>Кого ищут:</b> {looking}\n\n"
+        "Выбери нужные теги и нажми <b>«Показать анкеты»</b>."
     )
 
 
@@ -160,21 +165,27 @@ async def send_profile_message(
 
     if photo_file_id:
         if len(card_text) <= 1000:
-            await message.answer_photo(photo=photo_file_id, caption=card_text, reply_markup=reply_markup)
+            await message.answer_photo(
+                photo=photo_file_id,
+                caption=card_text,
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+            )
             return
-        await message.answer_photo(photo=photo_file_id, caption="Фото участника")
+        await message.answer_photo(photo=photo_file_id, caption="📷 <b>Фото участника</b>", parse_mode="HTML")
 
-    await message.answer(card_text, reply_markup=reply_markup)
+    await message.answer(card_text, reply_markup=reply_markup, parse_mode="HTML")
 
 
 async def ask_name(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.name)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "Шаг 1/8. Как тебя зовут?\n"
-        f"Сейчас в черновике: {draft['name']}\n"
-        "Можешь отправить своё имя текстом или оставить имя из Telegram.",
+        "👋 <b>Шаг 1/8. Как тебя зовут?</b>\n"
+        f"Сейчас в черновике: <code>{escape_text(draft['name'])}</code>\n"
+        "Можешь отправить своё имя текстом или нажать кнопку ниже.",
         reply_markup=name_keyboard(),
+        parse_mode="HTML",
     )
 
 
@@ -182,9 +193,10 @@ async def ask_championships(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.championships)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "Шаг 2/8. Выбери чемпионаты, которые тебе интересны.\n"
+        "🏆 <b>Шаг 2/8. Выбери чемпионаты</b>\n"
         "Можно отметить несколько вариантов.",
         reply_markup=multi_select_keyboard("championships", draft["championships"]),
+        parse_mode="HTML",
     )
 
 
@@ -192,17 +204,19 @@ async def ask_roles(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.roles)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "Шаг 3/8. В чём ты силён(сильна)?\n"
+        "🧠 <b>Шаг 3/8. В чём ты силён(сильна)?</b>\n"
         "Можно отметить несколько ролей.",
         reply_markup=multi_select_keyboard("roles", draft["roles"]),
+        parse_mode="HTML",
     )
 
 
 async def ask_status(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.status)
     await message.answer(
-        "Шаг 4/8. Какой у тебя статус сейчас?",
+        "📌 <b>Шаг 4/8. Какой у тебя статус сейчас?</b>",
         reply_markup=status_keyboard(),
+        parse_mode="HTML",
     )
 
 
@@ -210,17 +224,19 @@ async def ask_looking_for_roles(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.looking_for_roles)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "Шаг 5/8. Кого вам не хватает в команде?\n"
+        "🤝 <b>Шаг 5/8. Кого вам не хватает в команде?</b>\n"
         "Можно отметить несколько ролей.",
         reply_markup=multi_select_keyboard("looking_for_roles", draft["looking_for_roles"]),
+        parse_mode="HTML",
     )
 
 
 async def ask_city(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.city)
     await message.answer(
-        "Шаг 6/8. Напиши город или регион коротко.",
+        "🌍 <b>Шаг 6/8. Напиши город или регион</b>\nКоротко, в одну строку.",
         reply_markup=single_text_keyboard(TEXT_CANCEL),
+        parse_mode="HTML",
     )
 
 
@@ -230,21 +246,22 @@ async def ask_contact(message: Message, state: FSMContext) -> None:
     has_username = bool(draft.get("username"))
     current_contact = draft.get("contact") or "не указан"
     text = (
-        "Шаг 7/8. Как с тобой связаться после мэтча?\n"
+        "📬 <b>Шаг 7/8. Как с тобой связаться после мэтча?</b>\n"
         "До взаимного мэтча контакт никому не показывается.\n"
     )
     if has_username:
-        text += f"Можно оставить текущий контакт: {current_contact}"
+        text += f"Можно оставить текущий контакт: <code>{escape_text(current_contact)}</code>"
     else:
         text += "У тебя нет @username, поэтому напиши удобный контакт вручную."
-    await message.answer(text, reply_markup=contact_keyboard(has_username))
+    await message.answer(text, reply_markup=contact_keyboard(has_username), parse_mode="HTML")
 
 
 async def ask_about(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.about)
     await message.answer(
-        "Шаг 8/8. Расскажи коротко о себе. Это поле можно пропустить.",
+        "✨ <b>Шаг 8/8. Расскажи коротко о себе</b>\nЭто поле можно пропустить.",
         reply_markup=optional_text_keyboard(),
+        parse_mode="HTML",
     )
 
 
@@ -252,9 +269,10 @@ async def ask_photo(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.photo)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "Финальный штрих: можно отправить одну фотографию для анкеты.\n"
-        "Если не хочешь добавлять фото, нажми «Пропустить».",
+        "📸 <b>Финальный штрих</b>\nМожно отправить одну фотографию для анкеты.\n"
+        "Если не хочешь добавлять фото, нажми <b>«Пропустить»</b>.",
         reply_markup=optional_text_keyboard(include_clear_photo=bool(draft.get("photo_file_id"))),
+        parse_mode="HTML",
     )
 
 
@@ -263,7 +281,7 @@ async def show_profile_preview(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     draft = data["draft"]
     create_mode = data.get("mode") == "create"
-    await message.answer("Вот как будет выглядеть твоя анкета:")
+    await message.answer("🪪 <b>Вот как будет выглядеть твоя анкета:</b>", parse_mode="HTML")
     await send_profile_message(
         message,
         draft,
@@ -378,6 +396,7 @@ async def show_my_profile(message: Message, db: Database, user_id: int) -> None:
         await message.answer(
             "У тебя пока нет анкеты. Создай её, чтобы попасть в ленту.",
             reply_markup=create_profile_keyboard(),
+            parse_mode="HTML",
         )
         return
 
@@ -395,6 +414,7 @@ async def show_feed_filters(message: Message, user_id: int, state: FSMContext, d
         await message.answer(
             "Сначала создай свою анкету, а потом можно смотреть других.",
             reply_markup=create_profile_keyboard(),
+            parse_mode="HTML",
         )
         return
 
@@ -402,7 +422,7 @@ async def show_feed_filters(message: Message, user_id: int, state: FSMContext, d
     filters = {"championships": [], "roles": [], "looking_for_roles": []}
     await state.set_state(BrowseState.filters)
     await state.update_data(feed_filters=filters)
-    await message.answer(format_filters(filters), reply_markup=feed_filters_keyboard(filters))
+    await message.answer(format_filters(filters), reply_markup=feed_filters_keyboard(filters), parse_mode="HTML")
 
 
 async def show_next_profile(message: Message, user_id: int, state: FSMContext, db: Database) -> None:
@@ -410,7 +430,7 @@ async def show_next_profile(message: Message, user_id: int, state: FSMContext, d
     filters = data.get("feed_filters", {"championships": [], "roles": [], "looking_for_roles": []})
     candidates = db.get_feed_candidates(user_id, filters)
     if not candidates:
-        await message.answer("Анкет пока нет или ты уже просмотрел(а) всё. Загляни позже.")
+        await message.answer("🫶 Анкет пока нет или ты уже просмотрел(а) всё. Загляни чуть позже.")
         return
 
     await send_profile_message(
@@ -555,12 +575,17 @@ async def start_handler(message: Message, db: Database) -> None:
             "Привет! Я помогу участникам NEXU найти команду для кейс-чемпионатов.\n\n"
             "Сначала создай анкету, потом сможешь смотреть других участников и получать мэтчи."
         )
-        await message.answer(text, reply_markup=main_menu())
-        await message.answer("Готов(а) начать?", reply_markup=create_profile_keyboard())
+        await message.answer(
+            "👋 <b>Привет!</b>\nЯ помогу участникам NEXU найти команду для кейс-чемпионатов.\n\n"
+            "Заполни анкету, а потом листай ленту и лови мэтчи 💫",
+            reply_markup=main_menu(),
+            parse_mode="HTML",
+        )
+        await message.answer("Готов(а) начать? 🚀", reply_markup=create_profile_keyboard())
         return
 
     await message.answer(
-        "Привет! Твоя анкета уже есть в базе. Можно смотреть ленту, редактировать профиль и проверять мэтчи.",
+        "👋 Твоя анкета уже есть в базе. Можно смотреть ленту, редактировать профиль и проверять мэтчи 💫",
         reply_markup=main_menu(),
     )
 
@@ -569,7 +594,7 @@ async def start_handler(message: Message, db: Database) -> None:
 @router.message(F.text == TEXT_CANCEL)
 async def cancel_handler(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer("Текущее действие отменено.", reply_markup=main_menu())
+    await message.answer("Окей, текущее действие отменено ✋", reply_markup=main_menu())
 
 
 @router.message(Command("my"))
@@ -613,7 +638,7 @@ async def profile_name_handler(message: Message, state: FSMContext) -> None:
         draft["name"] = message.text.strip()
 
     if not draft["name"]:
-        await message.answer("Имя не должно быть пустым.")
+        await message.answer("Имя не должно быть пустым 🙂")
         return
 
     await state.update_data(draft=draft)
@@ -671,7 +696,7 @@ async def status_handler(callback: CallbackQuery, state: FSMContext) -> None:
 async def city_handler(message: Message, state: FSMContext) -> None:
     city = message.text.strip()
     if not city:
-        await message.answer("Город или регион не должен быть пустым.")
+        await message.answer("Город или регион не должен быть пустым 🙂")
         return
 
     data = await state.get_data()
@@ -690,14 +715,14 @@ async def contact_handler(message: Message, state: FSMContext) -> None:
 
     if message.text == TEXT_USE_USERNAME:
         if not username:
-            await message.answer("Сейчас у тебя нет @username, напиши контакт текстом.")
+            await message.answer("Сейчас у тебя нет @username, поэтому просто пришли контакт текстом 🙂")
             return
         draft["contact"] = username
     else:
         draft["contact"] = message.text.strip()
 
     if not draft["contact"]:
-        await message.answer("Контакт не должен быть пустым.")
+        await message.answer("Контакт не должен быть пустым 🙂")
         return
 
     await state.update_data(draft=draft)
@@ -750,7 +775,7 @@ async def confirm_save_handler(callback: CallbackQuery, state: FSMContext, db: D
     db.upsert_profile(profile)
     await state.clear()
     await callback.answer("Анкета сохранена.")
-    await callback.message.answer("Анкета сохранена. Теперь можно смотреть ленту.", reply_markup=main_menu())
+    await callback.message.answer("Анкета сохранена ✅ Теперь можно смотреть ленту и искать команду.", reply_markup=main_menu())
 
 
 @router.callback_query(ProfileForm.confirm, F.data == "confirm:restart")
@@ -806,7 +831,7 @@ async def confirm_delete_handler(callback: CallbackQuery, db: Database, state: F
     db.delete_profile(callback.from_user.id)
     await state.clear()
     await callback.answer("Анкета удалена.")
-    await callback.message.answer("Анкета удалена. Если захочешь вернуться, создай новую.", reply_markup=main_menu())
+    await callback.message.answer("Анкета удалена. Если захочешь вернуться, создай новую ✨", reply_markup=main_menu())
 
 
 @router.callback_query(F.data == "delete:no")
@@ -834,7 +859,11 @@ async def feed_filters_handler(callback: CallbackQuery, state: FSMContext, db: D
         filters[field] = toggle_option(filters.get(field, []), option)
 
     await state.update_data(feed_filters=filters)
-    await callback.message.edit_text(format_filters(filters), reply_markup=feed_filters_keyboard(filters))
+    await callback.message.edit_text(
+        format_filters(filters),
+        reply_markup=feed_filters_keyboard(filters),
+        parse_mode="HTML",
+    )
     await callback.answer()
 
 
@@ -944,7 +973,7 @@ async def backup_db_handler(message: Message, db: Database, settings: Settings) 
 @router.message()
 async def fallback_handler(message: Message) -> None:
     await message.answer(
-        "Я понял не всё. Используй кнопки меню или команды /start, /my, /matches, /cancel.",
+        "🤖 Я не всё понял.\nИспользуй кнопки меню или команды /start, /my, /matches, /cancel.",
         reply_markup=main_menu(),
     )
 

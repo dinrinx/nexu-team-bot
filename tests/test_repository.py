@@ -6,7 +6,8 @@ from aiogram.fsm.storage.base import StorageKey
 
 from bot.constants import STATUS_HAS_TEAM, STATUS_LOOKING
 from bot.database import Database, Profile, now_iso
-from bot.storage import SQLiteStorage
+from bot.states import ProfileForm
+from bot.storage import SQLiteStorage, _storage_key_to_string
 
 
 class DatabaseTests(unittest.TestCase):
@@ -123,7 +124,7 @@ class SQLiteStorageTests(unittest.IsolatedAsyncioTestCase):
         self.temp_dir.cleanup()
 
     async def test_state_and_data_persist_between_instances(self) -> None:
-        await self.storage.set_state(self.key, "ProfileForm:name")
+        await self.storage.set_state(self.key, ProfileForm.name)
         await self.storage.set_data(self.key, {"draft": {"name": "Diana"}})
         await self.storage.close()
 
@@ -131,6 +132,17 @@ class SQLiteStorageTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(reopened.close)
         self.assertEqual(await reopened.get_state(self.key), "ProfileForm:name")
         self.assertEqual(await reopened.get_data(self.key), {"draft": {"name": "Diana"}})
+
+    async def test_legacy_wrapped_state_is_normalized(self) -> None:
+        self.storage.connection.execute(
+            """
+            INSERT INTO fsm_storage (storage_key, state, data, updated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (_storage_key_to_string(self.key), "<State 'ProfileForm:name'>", "{}", now_iso()),
+        )
+        self.storage.connection.commit()
+        self.assertEqual(await self.storage.get_state(self.key), "ProfileForm:name")
 
 
 if __name__ == "__main__":
