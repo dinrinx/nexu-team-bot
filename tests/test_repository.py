@@ -26,7 +26,7 @@ class DatabaseTests(unittest.TestCase):
             "user_id": user_id,
             "name": f"User {user_id}",
             "championships": ["КЛЮЧ"],
-            "roles": ["аналитика и цифры"],
+            "roles": ["аналитик"],
             "status": STATUS_LOOKING,
             "looking_for_roles": [],
             "city": "Москва",
@@ -70,9 +70,9 @@ class DatabaseTests(unittest.TestCase):
             self.make_profile(
                 2,
                 championships=["DEADLINE"],
-                roles=["дизайн слайдов"],
+                roles=["дизайнер"],
                 status=STATUS_HAS_TEAM,
-                looking_for_roles=["аналитика и цифры"],
+                looking_for_roles=["аналитик"],
             )
         )
         self.db.upsert_profile(self.make_profile(3, championships=["КЛЮЧ", "DEADLINE"]))
@@ -81,8 +81,8 @@ class DatabaseTests(unittest.TestCase):
             1,
             {
                 "championships": ["DEADLINE"],
-                "roles": ["дизайн слайдов"],
-                "looking_for_roles": ["аналитика и цифры"],
+                "roles": ["дизайнер"],
+                "looking_for_roles": ["аналитик"],
             },
         )
         self.assertEqual([profile.user_id for profile in filtered], [2])
