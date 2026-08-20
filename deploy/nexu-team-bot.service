@@ -1,0 +1,15 @@
+[Unit]
+Description=NEXU Team Matcher Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/nexu-team-bot
+EnvironmentFile=/root/nexu-team-bot/.env
+ExecStart=/root/nexu-team-bot/.venv/bin/python /root/nexu-team-bot/run.py
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
