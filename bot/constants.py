@@ -45,7 +45,7 @@ REPORT_REASONS = {
 EDITABLE_FIELDS = {
     "name": "Имя",
     "championships": "Чемпионаты",
-    "roles": "Сильные стороны",
+    "roles": "Роли в команде",
     "status": "Статус",
     "looking_for_roles": "Кого ищете в команду",
     "city": "Город / регион",

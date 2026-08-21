@@ -117,25 +117,25 @@ def format_profile_card(profile: Profile | dict[str, Any], reveal_contact: bool 
         data = profile
 
     lines = [
-        f"👤 <b>{escape_text(data['name'])}</b>",
-        f"🏆 <b>Чемпионаты:</b> {format_tags(data['championships'])}",
-        f"🧠 <b>Сильные стороны:</b> {format_tags(data['roles'])}",
-        f"📌 <b>Статус:</b> {escape_text(STATUS_LABELS[data['status']])}",
+        f"• <b>Имя:</b> {escape_text(data['name'])}",
+        f"• <b>Чемпионаты:</b> {format_tags(data['championships'])}",
+        f"• <b>Роли в команде:</b> {format_tags(data['roles'])}",
+        f"• <b>Статус:</b> {escape_text(STATUS_LABELS[data['status']])}",
     ]
 
     if data["status"] == STATUS_HAS_TEAM and data.get("looking_for_roles"):
-        lines.append(f"🤝 <b>Кого ищут в команду:</b> {format_tags(data['looking_for_roles'])}")
+        lines.append(f"• <b>Кого ищут в команду:</b> {format_tags(data['looking_for_roles'])}")
 
-    lines.append(f"🌍 <b>Город / регион:</b> {escape_text(data['city'])}")
+    lines.append(f"• <b>Город / регион:</b> {escape_text(data['city'])}")
 
     about = data.get("about")
     if about:
-        lines.append(f"✨ <b>О себе:</b> {escape_text(about)}")
+        lines.append(f"• <b>О себе:</b> {escape_text(about)}")
 
     if reveal_contact:
-        lines.append(f"📬 <b>Контакт:</b> {escape_text(data['contact'])}")
+        lines.append(f"• <b>Контакт:</b> {escape_text(data['contact'])}")
 
-    return "\n".join(lines)
+    return "\n\n".join(lines)
 
 
 async def send_profile_message(
@@ -188,7 +188,7 @@ async def ask_roles(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.roles)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "🧠 <b>Шаг 3/8. В чём ты силён(сильна)?</b>\n"
+        "• <b>Шаг 3/8. Роли в команде</b>\n"
         "Можно отметить несколько ролей.",
         reply_markup=multi_select_keyboard("roles", draft["roles"]),
         parse_mode="HTML",
