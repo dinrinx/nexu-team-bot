@@ -10,6 +10,7 @@ from bot.constants import (
     MENU_CREATE,
     MENU_MATCHES,
     MENU_MY,
+    REPORT_REASONS,
     ROLES,
     STATUS_HAS_TEAM,
     STATUS_LABELS,
@@ -134,31 +135,19 @@ def delete_confirm_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def feed_filters_keyboard(filters: dict[str, list[str]]) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-
-    for index, option in enumerate(CHAMPIONSHIPS):
-        mark = "✅" if option in filters.get("championships", []) else "☑️"
-        builder.button(text=f"{mark} {option}", callback_data=f"filter:championships:{index}")
-
-    for index, option in enumerate(ROLES):
-        mark = "✅" if option in filters.get("roles", []) else "☑️"
-        builder.button(text=f"{mark} {option}", callback_data=f"filter:roles:{index}")
-
-    for index, option in enumerate(ROLES):
-        mark = "✅" if option in filters.get("looking_for_roles", []) else "☑️"
-        builder.button(text=f"{mark} Ищут: {option}", callback_data=f"filter:looking_for_roles:{index}")
-
-    builder.adjust(1)
-    builder.button(text="Сбросить фильтры", callback_data="filter:reset")
-    builder.button(text="Показать анкеты", callback_data="filter:show")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 def feed_reaction_keyboard(profile_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="❤️ Откликнуться", callback_data=f"react:like:{profile_id}")
     builder.button(text="➡️ Пропустить", callback_data=f"react:pass:{profile_id}")
-    builder.adjust(2)
+    builder.button(text="⚠️ Пожаловаться", callback_data=f"report:open:{profile_id}")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def report_reasons_keyboard(profile_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for reason_code, label in REPORT_REASONS.items():
+        builder.button(text=label, callback_data=f"report:reason:{profile_id}:{reason_code}")
+    builder.adjust(1)
+    builder.button(text="Назад", callback_data=f"report:back:{profile_id}")
     return builder.as_markup()

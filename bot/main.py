@@ -20,6 +20,7 @@ from bot.constants import (
     MENU_CREATE,
     MENU_MATCHES,
     MENU_MY,
+    REPORT_REASONS,
     ROLES,
     STATUS_HAS_TEAM,
     STATUS_LABELS,
@@ -36,7 +37,6 @@ from bot.keyboards import (
     create_profile_keyboard,
     delete_confirm_keyboard,
     edit_fields_keyboard,
-    feed_filters_keyboard,
     feed_reaction_keyboard,
     main_menu,
     multi_select_keyboard,
@@ -44,10 +44,11 @@ from bot.keyboards import (
     name_keyboard,
     optional_text_keyboard,
     profile_confirm_keyboard,
+    report_reasons_keyboard,
     single_text_keyboard,
     status_keyboard,
 )
-from bot.states import BrowseState, ProfileForm
+from bot.states import ProfileForm
 from bot.storage import SQLiteStorage
 
 
@@ -135,23 +136,6 @@ def format_profile_card(profile: Profile | dict[str, Any], reveal_contact: bool 
         lines.append(f"📬 <b>Контакт:</b> {escape_text(data['contact'])}")
 
     return "\n".join(lines)
-
-
-def format_filters(filters: dict[str, list[str]]) -> str:
-    championships = format_tags(filters.get("championships", [])) if filters.get("championships") else "любые"
-    roles = format_tags(filters.get("roles", [])) if filters.get("roles") else "любые"
-    looking = (
-        format_tags(filters.get("looking_for_roles", []))
-        if filters.get("looking_for_roles")
-        else "любые"
-    )
-    return (
-        "🔎 <b>Фильтры ленты</b>\n"
-        f"• <b>Чемпионаты:</b> {championships}\n"
-        f"• <b>Сильные стороны:</b> {roles}\n"
-        f"• <b>Кого ищут:</b> {looking}\n\n"
-        "Выбери нужные теги и нажми <b>«Показать анкеты»</b>."
-    )
 
 
 async def send_profile_message(
@@ -408,7 +392,34 @@ async def show_my_profile(message: Message, db: Database, user_id: int) -> None:
     )
 
 
-async def show_feed_filters(message: Message, user_id: int, state: FSMContext, db: Database) -> None:
+def format_report_for_admin(
+    reason_label: str,
+    reporter: User,
+    target_profile: Profile,
+) -> str:
+    reporter_username = f"@{reporter.username}" if reporter.username else "без username"
+    reporter_name = reporter.full_name
+    card = format_profile_card(target_profile, reveal_contact=True)
+    return (
+        "⚠️ <b>Новая жалоба на анкету</b>\n\n"
+        f"<b>Причина:</b> {escape_text(reason_label)}\n"
+        f"<b>Кто пожаловался:</b> {escape_text(reporter_name)} ({escape_text(reporter_username)})\n"
+        f"<b>ID отправителя:</b> <code>{reporter.id}</code>\n"
+        f"<b>ID анкеты:</b> <code>{target_profile.user_id}</code>\n\n"
+        f"{card}"
+    )
+
+
+async def notify_admin_about_report(bot: Bot, settings: Settings, reporter: User, target_profile: Profile, reason_code: str) -> None:
+    reason_label = REPORT_REASONS.get(reason_code, REPORT_REASONS["other"])
+    text = format_report_for_admin(reason_label, reporter, target_profile)
+    try:
+        await bot.send_message(settings.admin_id, text, parse_mode="HTML")
+    except TelegramAPIError as error:
+        logging.warning("Could not deliver report to admin: %s", error)
+
+
+async def show_feed_entrypoint(message: Message, user_id: int, state: FSMContext, db: Database) -> None:
     profile = db.get_profile(user_id)
     if profile is None:
         await message.answer(
@@ -419,16 +430,14 @@ async def show_feed_filters(message: Message, user_id: int, state: FSMContext, d
         return
 
     await state.clear()
-    filters = {"championships": [], "roles": [], "looking_for_roles": []}
-    await state.set_state(BrowseState.filters)
-    await state.update_data(feed_filters=filters)
-    await message.answer(format_filters(filters), reply_markup=feed_filters_keyboard(filters), parse_mode="HTML")
+    await show_next_profile(message, user_id, db)
 
 
-async def show_next_profile(message: Message, user_id: int, state: FSMContext, db: Database) -> None:
-    data = await state.get_data()
-    filters = data.get("feed_filters", {"championships": [], "roles": [], "looking_for_roles": []})
-    candidates = db.get_feed_candidates(user_id, filters)
+async def show_next_profile(message: Message, user_id: int, db: Database) -> None:
+    candidates = db.get_feed_candidates(
+        user_id,
+        {"championships": [], "roles": [], "looking_for_roles": []},
+    )
     if not candidates:
         await message.answer("🫶 Анкет пока нет или ты уже просмотрел(а) всё. Загляни чуть позже.")
         return
@@ -618,7 +627,7 @@ async def menu_create_handler(message: Message, state: FSMContext, db: Database)
 
 @router.message(F.text == MENU_BROWSE)
 async def menu_browse_handler(message: Message, state: FSMContext, db: Database) -> None:
-    await show_feed_filters(message, message.from_user.id, state, db)
+    await show_feed_entrypoint(message, message.from_user.id, state, db)
 
 
 @router.callback_query(F.data == "profile:create")
@@ -840,35 +849,8 @@ async def cancel_delete_handler(callback: CallbackQuery, db: Database) -> None:
     await show_my_profile(callback.message, db, callback.from_user.id)
 
 
-@router.callback_query(F.data.startswith("filter:"))
-async def feed_filters_handler(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
-    if callback.data == "filter:show":
-        await callback.answer()
-        await show_next_profile(callback.message, callback.from_user.id, state, db)
-        return
-
-    data = await state.get_data()
-    filters = data.get("feed_filters", {"championships": [], "roles": [], "looking_for_roles": []})
-
-    if callback.data == "filter:reset":
-        filters = {"championships": [], "roles": [], "looking_for_roles": []}
-    else:
-        _, field, raw_index = callback.data.split(":")
-        index = int(raw_index)
-        option = CHAMPIONSHIPS[index] if field == "championships" else ROLES[index]
-        filters[field] = toggle_option(filters.get(field, []), option)
-
-    await state.update_data(feed_filters=filters)
-    await callback.message.edit_text(
-        format_filters(filters),
-        reply_markup=feed_filters_keyboard(filters),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
 @router.callback_query(F.data.startswith("react:"))
-async def reaction_handler(callback: CallbackQuery, db: Database, state: FSMContext, bot: Bot) -> None:
+async def reaction_handler(callback: CallbackQuery, db: Database, bot: Bot) -> None:
     _, reaction, raw_target_id = callback.data.split(":")
     target_id = int(raw_target_id)
 
@@ -879,7 +861,7 @@ async def reaction_handler(callback: CallbackQuery, db: Database, state: FSMCont
     if not db.profiles_exist(callback.from_user.id, target_id):
         await safe_remove_inline_keyboard(callback)
         await callback.answer("Эта анкета уже недоступна.", show_alert=True)
-        await show_next_profile(callback.message, callback.from_user.id, state, db)
+        await show_next_profile(callback.message, callback.from_user.id, db)
         return
 
     saved = db.save_reaction(callback.from_user.id, target_id, reaction)
@@ -897,7 +879,64 @@ async def reaction_handler(callback: CallbackQuery, db: Database, state: FSMCont
             if first_profile and second_profile:
                 await send_match_notifications(bot, first_profile, second_profile)
 
-    await show_next_profile(callback.message, callback.from_user.id, state, db)
+    await show_next_profile(callback.message, callback.from_user.id, db)
+
+
+@router.callback_query(F.data.startswith("report:open:"))
+async def open_report_menu_handler(callback: CallbackQuery, db: Database) -> None:
+    _, _, raw_target_id = callback.data.split(":")
+    target_id = int(raw_target_id)
+    if not db.profile_exists(target_id):
+        await safe_remove_inline_keyboard(callback)
+        await callback.answer("Эта анкета уже недоступна.", show_alert=True)
+        return
+
+    await callback.message.edit_reply_markup(reply_markup=report_reasons_keyboard(target_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("report:back:"))
+async def report_back_handler(callback: CallbackQuery, db: Database) -> None:
+    _, _, raw_target_id = callback.data.split(":")
+    target_id = int(raw_target_id)
+    if not db.profile_exists(target_id):
+        await safe_remove_inline_keyboard(callback)
+        await callback.answer("Эта анкета уже недоступна.", show_alert=True)
+        return
+
+    await callback.message.edit_reply_markup(reply_markup=feed_reaction_keyboard(target_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("report:reason:"))
+async def report_reason_handler(
+    callback: CallbackQuery,
+    db: Database,
+    bot: Bot,
+    settings: Settings,
+) -> None:
+    _, _, raw_target_id, reason_code = callback.data.split(":")
+    target_id = int(raw_target_id)
+
+    if not db.profiles_exist(callback.from_user.id, target_id):
+        await safe_remove_inline_keyboard(callback)
+        await callback.answer("Эта анкета уже недоступна.", show_alert=True)
+        return
+
+    saved = db.save_reaction(callback.from_user.id, target_id, "pass")
+    if not saved:
+        await safe_remove_inline_keyboard(callback)
+        await callback.answer("Эта анкета уже обработана.", show_alert=True)
+        return
+
+    target_profile = db.get_profile(target_id)
+    if target_profile is not None:
+        await notify_admin_about_report(bot, settings, callback.from_user, target_profile, reason_code)
+
+    await safe_remove_inline_keyboard(callback)
+    await callback.answer("Жалоба отправлена админу.")
+    await callback.message.answer("Спасибо, жалоба отправлена 🛡️")
+    await show_next_profile(callback.message, callback.from_user.id, db)
 
 
 @router.message(Command("stats"))

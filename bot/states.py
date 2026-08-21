@@ -12,7 +12,3 @@ class ProfileForm(StatesGroup):
     about = State()
     photo = State()
     confirm = State()
-
-
-class BrowseState(StatesGroup):
-    filters = State()

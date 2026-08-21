@@ -34,6 +34,14 @@ TEXT_CLEAR_PHOTO = "Удалить фото"
 TEXT_USE_DEFAULT_NAME = "Оставить имя из Telegram"
 TEXT_USE_USERNAME = "Использовать мой @username"
 
+REPORT_REASONS = {
+    "spam": "Спам / реклама",
+    "fake": "Фейковая анкета",
+    "abuse": "Оскорбительный или неуместный текст",
+    "contact": "Подозрительный контакт",
+    "other": "Другая причина",
+}
+
 EDITABLE_FIELDS = {
     "name": "Имя",
     "championships": "Чемпионаты",

@@ -111,6 +111,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(backup_path.exists())
         self.assertIsNotNone(backup_db.get_profile(1))
 
+    def test_feed_without_filters_returns_all_unreacted_profiles(self) -> None:
+        self.db.upsert_profile(self.make_profile(1))
+        self.db.upsert_profile(self.make_profile(2))
+        self.db.upsert_profile(self.make_profile(3))
+        self.db.save_reaction(1, 2, "pass")
+
+        candidates = self.db.get_feed_candidates(
+            1,
+            {"championships": [], "roles": [], "looking_for_roles": []},
+        )
+        self.assertEqual([profile.user_id for profile in candidates], [3])
+
 
 class SQLiteStorageTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
