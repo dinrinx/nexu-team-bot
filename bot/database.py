@@ -29,6 +29,8 @@ def loads_list(value: str | None) -> list[str]:
 class Profile:
     user_id: int
     name: str
+    age: int | None
+    study_info: str | None
     championships: list[str]
     roles: list[str]
     status: str
@@ -46,6 +48,8 @@ class Profile:
         return cls(
             user_id=row["id"],
             name=row["name"],
+            age=row["age"],
+            study_info=row["study_info"],
             championships=loads_list(row["championships"]),
             roles=loads_list(row["roles"]),
             status=row["status"],
@@ -86,6 +90,8 @@ class Database:
             CREATE TABLE IF NOT EXISTS profiles (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
+                age INTEGER,
+                study_info TEXT,
                 championships TEXT NOT NULL,
                 roles TEXT NOT NULL,
                 status TEXT NOT NULL CHECK(status IN ('looking', 'has_team')),
@@ -120,8 +126,20 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_matches_users ON matches (user_low_id, user_high_id);
             """
         )
+        self._migrate_profiles_table()
         self._migrate_relational_tables()
         self.connection.commit()
+
+    def _profile_column_names(self) -> set[str]:
+        rows = self.connection.execute("PRAGMA table_info(profiles)").fetchall()
+        return {row["name"] for row in rows}
+
+    def _migrate_profiles_table(self) -> None:
+        columns = self._profile_column_names()
+        if "age" not in columns:
+            self.connection.execute("ALTER TABLE profiles ADD COLUMN age INTEGER")
+        if "study_info" not in columns:
+            self.connection.execute("ALTER TABLE profiles ADD COLUMN study_info TEXT")
 
     def _table_has_foreign_keys(self, table_name: str) -> bool:
         rows = self.connection.execute(f"PRAGMA foreign_key_list({table_name})").fetchall()
@@ -192,12 +210,14 @@ class Database:
         self.connection.execute(
             """
             INSERT INTO profiles (
-                id, name, championships, roles, status, looking_for_roles,
+                id, name, age, study_info, championships, roles, status, looking_for_roles,
                 city, username, contact, about, photo_file_id, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
+                age=excluded.age,
+                study_info=excluded.study_info,
                 championships=excluded.championships,
                 roles=excluded.roles,
                 status=excluded.status,
@@ -212,6 +232,8 @@ class Database:
             (
                 profile.user_id,
                 profile.name,
+                profile.age,
+                profile.study_info,
                 dumps_list(profile.championships),
                 dumps_list(profile.roles),
                 profile.status,

@@ -3,6 +3,8 @@ from aiogram.fsm.state import State, StatesGroup
 
 class ProfileForm(StatesGroup):
     name = State()
+    age = State()
+    study_info = State()
     championships = State()
     roles = State()
     status = State()

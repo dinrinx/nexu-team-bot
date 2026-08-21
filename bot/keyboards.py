@@ -118,6 +118,8 @@ def edit_fields_keyboard(include_looking_for_roles: bool) -> InlineKeyboardMarku
     builder = InlineKeyboardBuilder()
     fields = [
         "name",
+        "age",
+        "study_info",
         "championships",
         "roles",
         "status",

@@ -25,6 +25,8 @@ class DatabaseTests(unittest.TestCase):
         payload = {
             "user_id": user_id,
             "name": f"User {user_id}",
+            "age": 16,
+            "study_info": "10 класс",
             "championships": ["КЛЮЧ"],
             "roles": ["аналитик"],
             "status": STATUS_LOOKING,
@@ -47,6 +49,8 @@ class DatabaseTests(unittest.TestCase):
         loaded = self.db.get_profile(1)
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.name, "User 1")
+        self.assertEqual(loaded.age, 16)
+        self.assertEqual(loaded.study_info, "10 класс")
         self.assertEqual(loaded.championships, ["КЛЮЧ"])
 
     def test_match_creation(self) -> None:

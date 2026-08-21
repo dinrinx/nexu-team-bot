@@ -68,6 +68,8 @@ def build_default_draft(user: User, existing: Profile | None = None) -> dict[str
     if existing is not None:
         return {
             "name": existing.name,
+            "age": existing.age,
+            "study_info": existing.study_info,
             "championships": list(existing.championships),
             "roles": list(existing.roles),
             "status": existing.status,
@@ -82,6 +84,8 @@ def build_default_draft(user: User, existing: Profile | None = None) -> dict[str
 
     return {
         "name": user.full_name,
+        "age": None,
+        "study_info": None,
         "championships": [],
         "roles": [],
         "status": STATUS_LOOKING,
@@ -103,10 +107,23 @@ def escape_text(value: str) -> str:
     return html.escape(value)
 
 
+def format_profile_title(data: dict[str, Any]) -> str:
+    parts = [escape_text(data["name"])]
+    age = data.get("age")
+    if age:
+        parts.append(f"{age} лет")
+    study_info = data.get("study_info")
+    if study_info:
+        parts.append(escape_text(study_info))
+    return "<b>" + ", ".join(parts) + "</b>"
+
+
 def format_profile_card(profile: Profile | dict[str, Any], reveal_contact: bool = False) -> str:
     if isinstance(profile, Profile):
         data = {
             "name": profile.name,
+            "age": profile.age,
+            "study_info": profile.study_info,
             "championships": profile.championships,
             "roles": profile.roles,
             "status": profile.status,
@@ -119,7 +136,7 @@ def format_profile_card(profile: Profile | dict[str, Any], reveal_contact: bool 
         data = profile
 
     lines = [
-        f"• <b>Имя:</b> {escape_text(data['name'])}",
+        format_profile_title(data),
         f"• <b>Чемпионаты:</b> {format_tags(data['championships'])}",
         f"• <b>Роли в команде:</b> {format_tags(data['roles'])}",
         f"• <b>Статус:</b> {escape_text(STATUS_LABELS[data['status']])}",
@@ -135,7 +152,7 @@ def format_profile_card(profile: Profile | dict[str, Any], reveal_contact: bool 
         lines.append(f"• <b>О себе:</b> {escape_text(about)}")
 
     if reveal_contact:
-        lines.append(f"• <b>Контакт:</b> {escape_text(data['contact'])}")
+        lines.append(f"• <b>Скрытый контакт для мэтчей:</b> {escape_text(data['contact'])}")
 
     return "\n\n".join(lines)
 
@@ -167,10 +184,41 @@ async def ask_name(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.name)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "👋 <b>Шаг 1/8. Как тебя зовут?</b>\n"
+        "👋 <b>Шаг 1/10. Как тебя зовут?</b>\n"
         f"Сейчас в черновике: <code>{escape_text(draft['name'])}</code>\n"
         "Можешь отправить своё имя текстом или нажать кнопку ниже.",
         reply_markup=name_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+async def ask_age(message: Message, state: FSMContext) -> None:
+    await state.set_state(ProfileForm.age)
+    draft = (await state.get_data())["draft"]
+    current_age = draft.get("age")
+    text = "🔹 <b>Шаг 2/10. Сколько тебе лет?</b>\nНапиши возраст цифрами."
+    if current_age:
+        text += f"\nСейчас в черновике: <code>{current_age}</code>"
+    await message.answer(
+        text,
+        reply_markup=single_text_keyboard(TEXT_CANCEL),
+        parse_mode="HTML",
+    )
+
+
+async def ask_study_info(message: Message, state: FSMContext) -> None:
+    await state.set_state(ProfileForm.study_info)
+    draft = (await state.get_data())["draft"]
+    text = (
+        "🔹 <b>Шаг 3/10. Укажи класс или курс</b>\n"
+        "Например: <code>10 класс</code>, <code>2 курс СПО</code> или <code>1 курс вуза</code>."
+    )
+    current_value = draft.get("study_info")
+    if current_value:
+        text += f"\nСейчас в черновике: <code>{escape_text(current_value)}</code>"
+    await message.answer(
+        text,
+        reply_markup=single_text_keyboard(TEXT_CANCEL),
         parse_mode="HTML",
     )
 
@@ -179,7 +227,7 @@ async def ask_championships(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.championships)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "🏆 <b>Шаг 2/8. Выбери чемпионаты</b>\n"
+        "🏆 <b>Шаг 4/10. Выбери чемпионаты</b>\n"
         "Можно отметить несколько вариантов.",
         reply_markup=multi_select_keyboard("championships", draft["championships"]),
         parse_mode="HTML",
@@ -190,7 +238,7 @@ async def ask_roles(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.roles)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "• <b>Шаг 3/8. Роли в команде</b>\n"
+        "• <b>Шаг 5/10. Роли в команде</b>\n"
         "Можно отметить несколько ролей.",
         reply_markup=multi_select_keyboard("roles", draft["roles"]),
         parse_mode="HTML",
@@ -200,7 +248,7 @@ async def ask_roles(message: Message, state: FSMContext) -> None:
 async def ask_status(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.status)
     await message.answer(
-        "📌 <b>Шаг 4/8. Какой у тебя статус сейчас?</b>",
+        "📌 <b>Шаг 6/10. Какой у тебя статус сейчас?</b>",
         reply_markup=status_keyboard(),
         parse_mode="HTML",
     )
@@ -210,7 +258,7 @@ async def ask_looking_for_roles(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.looking_for_roles)
     draft = (await state.get_data())["draft"]
     await message.answer(
-        "🤝 <b>Шаг 5/8. Кого вам не хватает в команде?</b>\n"
+        "🤝 <b>Шаг 7/10. Кого вам не хватает в команде?</b>\n"
         "Можно отметить несколько ролей.",
         reply_markup=multi_select_keyboard("looking_for_roles", draft["looking_for_roles"]),
         parse_mode="HTML",
@@ -220,7 +268,7 @@ async def ask_looking_for_roles(message: Message, state: FSMContext) -> None:
 async def ask_city(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.city)
     await message.answer(
-        "🌍 <b>Шаг 6/8. Напиши город или регион</b>\nКоротко, в одну строку.",
+        "🌍 <b>Шаг 8/10. Напиши город или регион</b>\nКоротко, в одну строку.",
         reply_markup=single_text_keyboard(TEXT_CANCEL),
         parse_mode="HTML",
     )
@@ -232,8 +280,8 @@ async def ask_contact(message: Message, state: FSMContext) -> None:
     has_username = bool(draft.get("username"))
     current_contact = draft.get("contact") or "не указан"
     text = (
-        "📬 <b>Шаг 7/8. Как с тобой связаться после мэтча?</b>\n"
-        "До взаимного мэтча контакт никому не показывается.\n"
+        "📬 <b>Шаг 9/10. Как с тобой связаться после мэтча?</b>\n"
+        "Этот контакт не будет виден в анкете и отправится только при взаимном мэтче.\n"
     )
     if has_username:
         text += f"Можно оставить текущий контакт: <code>{escape_text(current_contact)}</code>"
@@ -245,7 +293,7 @@ async def ask_contact(message: Message, state: FSMContext) -> None:
 async def ask_about(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileForm.about)
     await message.answer(
-        "✨ <b>Шаг 8/8. Расскажи коротко о себе</b>\nЭто поле можно пропустить.",
+        "✨ <b>Шаг 10/10. Расскажи коротко о себе</b>\nЭто поле можно пропустить.",
         reply_markup=optional_text_keyboard(),
         parse_mode="HTML",
     )
@@ -273,7 +321,10 @@ async def show_profile_preview(message: Message, state: FSMContext) -> None:
         message,
         draft,
         reply_markup=profile_confirm_keyboard(create_mode=create_mode),
-        reveal_contact=True,
+    )
+    await message.answer(
+        f"• <b>Скрытый контакт для мэтчей:</b> <code>{escape_text(draft['contact'])}</code>",
+        parse_mode="HTML",
     )
 
 
@@ -299,6 +350,10 @@ async def start_edit_flow(message: Message, user: User, state: FSMContext, db: D
 
     if field == "name":
         await ask_name(message, state)
+    elif field == "age":
+        await ask_age(message, state)
+    elif field == "study_info":
+        await ask_study_info(message, state)
     elif field == "championships":
         await ask_championships(message, state)
     elif field == "roles":
@@ -335,6 +390,10 @@ async def route_after_field(message: Message, state: FSMContext, completed_field
         return
 
     if completed_field == "name":
+        await ask_age(message, state)
+    elif completed_field == "age":
+        await ask_study_info(message, state)
+    elif completed_field == "study_info":
         await ask_championships(message, state)
     elif completed_field == "championships":
         await ask_roles(message, state)
@@ -363,6 +422,8 @@ def build_profile_from_draft(user_id: int, draft: dict[str, Any]) -> Profile:
     return Profile(
         user_id=user_id,
         name=draft["name"],
+        age=draft.get("age"),
+        study_info=draft.get("study_info"),
         championships=list(draft["championships"]),
         roles=list(draft["roles"]),
         status=draft["status"],
@@ -391,7 +452,10 @@ async def show_my_profile(message: Message, db: Database, user_id: int) -> None:
         message,
         profile,
         reply_markup=my_profile_keyboard(),
-        reveal_contact=True,
+    )
+    await message.answer(
+        f"• <b>Скрытый контакт для мэтчей:</b> <code>{escape_text(profile.contact)}</code>",
+        parse_mode="HTML",
     )
 
 
@@ -462,21 +526,14 @@ async def safe_remove_inline_keyboard(callback: CallbackQuery) -> None:
 
 
 async def send_match_notifications(bot: Bot, first_profile: Profile, second_profile: Profile) -> None:
-    first_text = (
-        f"🎉 У тебя мэтч с {second_profile.name}!\n"
-        f"Вот контакт: {second_profile.contact}"
+    notifications = (
+        (first_profile.user_id, second_profile.name, second_profile.contact),
+        (second_profile.user_id, first_profile.name, first_profile.contact),
     )
-    second_text = (
-        f"🎉 У тебя мэтч с {first_profile.name}!\n"
-        f"Вот контакт: {first_profile.contact}"
-    )
-
-    for chat_id, text in (
-        (first_profile.user_id, first_text),
-        (second_profile.user_id, second_text),
-    ):
+    for chat_id, match_name, match_contact in notifications:
         try:
-            await bot.send_message(chat_id, text, reply_markup=main_menu())
+            await bot.send_message(chat_id, f"🎉 У тебя мэтч с {match_name}!", reply_markup=main_menu())
+            await bot.send_message(chat_id, f"📬 Контакт: {match_contact}")
         except TelegramForbiddenError:
             logging.warning("Could not notify user %s about match", chat_id)
 
@@ -702,6 +759,39 @@ async def status_handler(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(draft=draft)
     await callback.answer()
     await route_after_field(callback.message, state, "status")
+
+
+@router.message(ProfileForm.age, F.text)
+async def age_handler(message: Message, state: FSMContext) -> None:
+    raw_age = message.text.strip()
+    if not raw_age.isdigit():
+        await message.answer("Возраст лучше отправить цифрами, например: <code>16</code>.", parse_mode="HTML")
+        return
+
+    age = int(raw_age)
+    if age < 10 or age > 99:
+        await message.answer("Укажи, пожалуйста, возраст числом от 10 до 99 🙂")
+        return
+
+    data = await state.get_data()
+    draft = data["draft"]
+    draft["age"] = age
+    await state.update_data(draft=draft)
+    await route_after_field(message, state, "age")
+
+
+@router.message(ProfileForm.study_info, F.text)
+async def study_info_handler(message: Message, state: FSMContext) -> None:
+    study_info = message.text.strip()
+    if not study_info:
+        await message.answer("Нужно указать класс или курс 🙂")
+        return
+
+    data = await state.get_data()
+    draft = data["draft"]
+    draft["study_info"] = study_info
+    await state.update_data(draft=draft)
+    await route_after_field(message, state, "study_info")
 
 
 @router.message(ProfileForm.city, F.text)

@@ -45,6 +45,8 @@ REPORT_REASONS = {
 
 EDITABLE_FIELDS = {
     "name": "Имя",
+    "age": "Возраст",
+    "study_info": "Класс / курс",
     "championships": "Чемпионаты",
     "roles": "Роли в команде",
     "status": "Статус",
