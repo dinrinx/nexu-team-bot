@@ -31,6 +31,7 @@ MENU_MATCHES = "Мои мэтчи"
 TEXT_SKIP = "Пропустить"
 TEXT_CANCEL = "Отмена"
 TEXT_CLEAR_PHOTO = "Удалить фото"
+TEXT_USE_PROFILE_PHOTO = "Добавь мою аватарку"
 TEXT_USE_DEFAULT_NAME = "Оставить имя из Telegram"
 TEXT_USE_USERNAME = "Использовать мой @username"
 

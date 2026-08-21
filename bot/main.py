@@ -29,6 +29,7 @@ from bot.constants import (
     TEXT_CLEAR_PHOTO,
     TEXT_SKIP,
     TEXT_USE_DEFAULT_NAME,
+    TEXT_USE_PROFILE_PHOTO,
     TEXT_USE_USERNAME,
 )
 from bot.database import Database, Profile, now_iso
@@ -43,6 +44,7 @@ from bot.keyboards import (
     my_profile_keyboard,
     name_keyboard,
     optional_text_keyboard,
+    photo_keyboard,
     profile_confirm_keyboard,
     report_reasons_keyboard,
     single_text_keyboard,
@@ -254,8 +256,9 @@ async def ask_photo(message: Message, state: FSMContext) -> None:
     draft = (await state.get_data())["draft"]
     await message.answer(
         "📸 <b>Финальный штрих</b>\nМожно отправить одну фотографию для анкеты.\n"
+        "Или нажми <b>«Добавь мою аватарку»</b>, чтобы взять фото из Telegram.\n"
         "Если не хочешь добавлять фото, нажми <b>«Пропустить»</b>.",
-        reply_markup=optional_text_keyboard(include_clear_photo=bool(draft.get("photo_file_id"))),
+        reply_markup=photo_keyboard(include_clear_photo=bool(draft.get("photo_file_id"))),
         parse_mode="HTML",
     )
 
@@ -759,9 +762,25 @@ async def photo_handler(message: Message, state: FSMContext) -> None:
 
 
 @router.message(ProfileForm.photo, F.text)
-async def photo_text_handler(message: Message, state: FSMContext) -> None:
+async def photo_text_handler(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     draft = data["draft"]
+
+    if message.text == TEXT_USE_PROFILE_PHOTO:
+        photos = await bot.get_user_profile_photos(message.from_user.id, limit=1)
+        if not photos.photos:
+            await message.answer(
+                "◦ У тебя сейчас нет аватарки в Telegram.\n\n"
+                "Можешь отправить фото вручную или нажать <b>«Пропустить»</b>.",
+                parse_mode="HTML",
+            )
+            return
+
+        draft["photo_file_id"] = photos.photos[0][-1].file_id
+        await state.update_data(draft=draft)
+        await message.answer("◦ Аватарка из Telegram добавлена.")
+        await route_after_field(message, state, "photo_file_id")
+        return
 
     if message.text == TEXT_SKIP:
         await route_after_field(message, state, "photo_file_id")
@@ -773,7 +792,12 @@ async def photo_text_handler(message: Message, state: FSMContext) -> None:
         await route_after_field(message, state, "photo_file_id")
         return
 
-    await message.answer("Отправь одну фотографию или нажми «Пропустить».")
+    await message.answer(
+        "◦ Отправь одну фотографию,\n"
+        "◦ нажми <b>«Добавь мою аватарку»</b>\n"
+        "◦ или выбери <b>«Пропустить»</b>.",
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(ProfileForm.confirm, F.data == "confirm:save")

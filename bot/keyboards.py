@@ -19,6 +19,7 @@ from bot.constants import (
     TEXT_CLEAR_PHOTO,
     TEXT_SKIP,
     TEXT_USE_DEFAULT_NAME,
+    TEXT_USE_PROFILE_PHOTO,
     TEXT_USE_USERNAME,
 )
 
@@ -45,6 +46,15 @@ def single_text_keyboard(*buttons: str) -> ReplyKeyboardMarkup:
 
 def optional_text_keyboard(include_clear_photo: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
+    builder.row(KeyboardButton(text=TEXT_SKIP), KeyboardButton(text=TEXT_CANCEL))
+    if include_clear_photo:
+        builder.row(KeyboardButton(text=TEXT_CLEAR_PHOTO))
+    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
+
+
+def photo_keyboard(include_clear_photo: bool = False) -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+    builder.row(KeyboardButton(text=TEXT_USE_PROFILE_PHOTO))
     builder.row(KeyboardButton(text=TEXT_SKIP), KeyboardButton(text=TEXT_CANCEL))
     if include_clear_photo:
         builder.row(KeyboardButton(text=TEXT_CLEAR_PHOTO))
